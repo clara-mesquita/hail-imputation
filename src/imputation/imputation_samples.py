@@ -12,14 +12,26 @@ from fancyimpute import SoftImpute
 from fancyimpute import IterativeSVD
 import re
 
-MISSING_DIR = "./data/imputation/missing_sample_data"
-IMPUTED_DATASETS_FOLDER = "./data/imputation/imputed_sample_data"
-# FIGURES_FOLDER = os.path.join(OUTPUT_FOLDER, "figures")
-REPORT_FILE = "./imputation_report.txt"
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+DATA_IMPUTATION_DIR = BASE_DIR / "data" / "imputation"
+MISSING_DIR = DATA_IMPUTATION_DIR / "missing_sample_data"
+SAMPLES_DIR = DATA_IMPUTATION_DIR / "sample_data"
+IMPUTED_DATASETS_FOLDER = DATA_IMPUTATION_DIR / "imputed_sample_data"
+
+IMPUTATION_RESULTS_DIR = BASE_DIR / "results" / "imputation" / "imputed_sample_data" 
+FINAL_REPORT_FILE = IMPUTATION_RESULTS_DIR / "sample_imputation_initial_results.txt"
+FIGURES_FOLDER = IMPUTATION_RESULTS_DIR / "figures"
+
 TIMESTAMP_COL = "Data"
-VALUE_COL = "Vazao"
+THROUGHPUT_COLUMN = "Vazao"
+
 MISSING_SENTINEL = np.nan
 RANDOM_SEED = 42
+
+MISSING_RATES = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4]
+MISSING_RATES_FOLDERS = [str(int(rate * 100)) for rate in MISSING_RATES]
+
 
 
 ################## HAIL IMPUTATION: DON'T CHANGE ######################
@@ -238,7 +250,7 @@ def knn_in_latent(M, k=5, energy=0.9, allow_future=True):
 
 ################## ANOTHER IMPUTATION METHODS ######################
 
-def impute_svd_knn(df, col=VALUE_COL, min_period=4, max_period=None, 
+def impute_svd_knn(df, col=THROUGHPUT_COLUMN, min_period=4, max_period=None, 
                    energy=0.9, k=5, allow_future=True, use_hankel=False):
     """SVD-KNN imputation with optional Hankel matrix"""
     y = df[col].to_numpy(dtype=float)
@@ -257,13 +269,13 @@ def impute_svd_knn(df, col=VALUE_COL, min_period=4, max_period=None,
     df_imputed[col] = y_imputed
     return df_imputed
 
-def impute_linear(df, col=VALUE_COL):
+def impute_linear(df, col=THROUGHPUT_COLUMN):
     """Linear interpolation"""
     df_imputed = df.copy()
     df_imputed[col] = df_imputed[col].interpolate(method="linear", limit_direction="both")
     return df_imputed
 
-def impute_knn_sklearn(df, k=5, col=VALUE_COL):
+def impute_knn_sklearn(df, k=5, col=THROUGHPUT_COLUMN):
     """sklearn KNN imputer"""
     df_imputed = df.copy()
     imputer = KNNImputer(n_neighbors=k, weights="uniform")
@@ -271,30 +283,26 @@ def impute_knn_sklearn(df, k=5, col=VALUE_COL):
     df_imputed[col] = imputed_values[:, 0]
     return df_imputed
 
-def impute_spline(df, col=VALUE_COL, order=3):
+def impute_spline(df, col=THROUGHPUT_COLUMN, order=3):
     """Spline interpolation"""
     df_imputed = df.copy()
     df_imputed[col] = df_imputed[col].interpolate(method='spline', order=order, limit_direction='both')
     return df_imputed
 
-def impute_mean(df, col=VALUE_COL):
+def impute_mean(df, col=THROUGHPUT_COLUMN):
     """Mean imputation"""
     df_imputed = df.copy()
     mean_value = df_imputed[col].mean()
     df_imputed[col] = df_imputed[col].fillna(mean_value)
     return df_imputed
 
-def impute_locf(df, col=VALUE_COL):
+def impute_locf(df, col=THROUGHPUT_COLUMN):
     """Last Observation Carried Forward"""
     df_imputed = df.copy()
     df_imputed[col] = df_imputed[col].ffill()
     return df_imputed
 
-# ============================================================================
-# Imputation Methods - NEW ADDITIONS
-# ============================================================================
-
-def impute_kalman(df, col=VALUE_COL, min_period=4, max_period=None):
+def impute_kalman(df, col=THROUGHPUT_COLUMN, min_period=4, max_period=None):
     """Kalman Filter imputation using UnobservedComponents"""
     df_imputed = df.copy()
     y = df_imputed[col].copy()
@@ -329,7 +337,7 @@ def impute_kalman(df, col=VALUE_COL, min_period=4, max_period=None):
     
     return df_imputed
 
-def impute_arima(df, col=VALUE_COL, order=(1,1,1)):
+def impute_arima(df, col=THROUGHPUT_COLUMN, order=(1,1,1)):
     """ARIMA imputation"""
     df_imputed = df.copy()
     y = df_imputed[col].copy()
@@ -355,7 +363,7 @@ def impute_arima(df, col=VALUE_COL, order=(1,1,1)):
     
     return df_imputed
 
-def impute_holtwinters(df, col=VALUE_COL, min_period=4, max_period=None):
+def impute_holtwinters(df, col=THROUGHPUT_COLUMN, min_period=4, max_period=None):
     """Holt-Winters Exponential Smoothing imputation"""
     df_imputed = df.copy()
     y = df_imputed[col].copy()
@@ -397,46 +405,37 @@ def impute_holtwinters(df, col=VALUE_COL, min_period=4, max_period=None):
     
     return df_imputed
 
-def impute_softimpute(df, col=VALUE_COL, max_rank=5):
-    """SoftImpute matrix completion"""
+# def impute_softimpute(df, col=THROUGHPUT_COLUMN, max_rank=5):
+#     """SoftImpute matrix completion"""
     
-    df_imputed = df.copy()
-    y = df_imputed[col].values.reshape(-1, 1).astype(float)
+#     df_imputed = df.copy()
+#     y = df_imputed[col].values.reshape(-1, 1).astype(float)
     
-    try:
-        # Apply SoftImpute
-        imputer = SoftImpute(max_rank=max_rank, verbose=False)
-        y_imputed = imputer.fit_transform(y)
-        df_imputed[col] = y_imputed.ravel()
+#     try:
+#         # Apply SoftImpute
+#         imputer = SoftImpute(max_rank=max_rank, verbose=False)
+#         y_imputed = imputer.fit_transform(y)
+#         df_imputed[col] = y_imputed.ravel()
         
-    except Exception as e:
-        print("Not possible to soft impute impute")
-        return SyntaxError
+#     except Exception as e:
+#         print("Not possible to soft impute impute")
+#         return SyntaxError
     
-    return df_imputed
+#     return df_imputed
 
-def impute_iterativesvd(df, col=VALUE_COL, rank=5):
-    """IterativeSVD matrix completion (similar to SoftImpute)"""
+# def impute_iterativesvd(df, col=THROUGHPUT_COLUMN, rank=5):
+#     """IterativeSVD matrix completion (similar to SoftImpute)"""
 
-    df_imputed = df.copy()
-    y = df_imputed[col].values.reshape(-1, 1).astype(float)
+#     df_imputed = df.copy()
+#     y = df_imputed[col].values.reshape(-1, 1).astype(float)
     
-    try:
-        # Apply IterativeSVD
-        imputer = IterativeSVD(rank=rank, verbose=False)
-        y_imputed = imputer.fit_transform(y)
-        df_imputed[col] = y_imputed.ravel()
-        
-    except Exception as e:
-        # Fallback to linear interpolation
-        df_imputed[col] = df_imputed[col].interpolate(limit_direction="both")
+#     imputer = IterativeSVD(rank=rank, verbose=False)
+#     y_imputed = imputer.fit_transform(y)
+#     df_imputed[col] = y_imputed.ravel()
     
-    return df_imputed
+#     return df_imputed
 
 
-# ============================================================================
-# Evaluation Metrics
-# ============================================================================
 
 def rmse(a, b):
     """Root Mean Squared Error"""
@@ -450,8 +449,8 @@ def mae(a, b):
 
 def evaluate_imputation(df_original, df_imputed, missing_mask):
     """Calculate RMSE and MAE for imputed values"""
-    orig_vals = df_original[VALUE_COL].to_numpy()[missing_mask]
-    imp_vals = df_imputed[VALUE_COL].to_numpy()[missing_mask]
+    orig_vals = df_original[THROUGHPUT_COLUMN].to_numpy()[missing_mask]
+    imp_vals = df_imputed[THROUGHPUT_COLUMN].to_numpy()[missing_mask]
     
     return {
         'rmse': rmse(orig_vals, imp_vals),
@@ -459,88 +458,70 @@ def evaluate_imputation(df_original, df_imputed, missing_mask):
         'n_points': int(missing_mask.sum())
     }
 
-# ============================================================================
-# Visualization
-# ============================================================================
+# def visualize_imputation(df_original, df_missing, df_imputed, method_name, 
+#                         dataset_name, missing_rate, save_path):
+#     """Visualize original, missing, and imputed time series"""
+#     fig, ax = plt.subplots(figsize=(14, 5))
+    
+#     missing_mask = (df_missing[VALUE_COL] == MISSING_SENTINEL) | df_missing[VALUE_COL].isna()
+    
+#     ax.plot(df_original.index, df_original[VALUE_COL], 'b-', 
+#             label='Original', alpha=0.7, linewidth=1.5)
+#     ax.plot(df_imputed.index, df_imputed[VALUE_COL], 'r--', 
+#             label=f'Imputed ({method_name})', alpha=0.7, linewidth=1.2)
+#     ax.scatter(df_original.index[missing_mask], df_original[VALUE_COL][missing_mask], 
+#                c='orange', s=30, label='Missing Points', zorder=5, alpha=0.6)
+    
+#     ax.set_title(f'{dataset_name} - {method_name} - Missing Rate: {missing_rate*100:.0f}%')
+#     ax.set_xlabel('Time Index')
+#     ax.set_ylabel(VALUE_COL)
+#     ax.legend()
+#     ax.grid(True, alpha=0.3)
+    
+#     fig.tight_layout()
+#     fig.savefig(save_path, dpi=150, bbox_inches='tight')
+#     plt.close(fig)
 
-def visualize_imputation(df_original, df_missing, df_imputed, method_name, 
-                        dataset_name, missing_rate, save_path):
-    """Visualize original, missing, and imputed time series"""
-    fig, ax = plt.subplots(figsize=(14, 5))
-    
-    missing_mask = (df_missing[VALUE_COL] == MISSING_SENTINEL) | df_missing[VALUE_COL].isna()
-    
-    ax.plot(df_original.index, df_original[VALUE_COL], 'b-', 
-            label='Original', alpha=0.7, linewidth=1.5)
-    ax.plot(df_imputed.index, df_imputed[VALUE_COL], 'r--', 
-            label=f'Imputed ({method_name})', alpha=0.7, linewidth=1.2)
-    ax.scatter(df_original.index[missing_mask], df_original[VALUE_COL][missing_mask], 
-               c='orange', s=30, label='Missing Points', zorder=5, alpha=0.6)
-    
-    ax.set_title(f'{dataset_name} - {method_name} - Missing Rate: {missing_rate*100:.0f}%')
-    ax.set_xlabel('Time Index')
-    ax.set_ylabel(VALUE_COL)
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    
-    fig.tight_layout()
-    fig.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
-
-# ============================================================================
-# Main Processing Pipeline
-# ==============
-
-# Coluna alvo para imputação
-# (Corresponde a VALUE_COL no seu script)
-TARGET_COLUMN = "Vazao"
-SAMPLES_DIR = "./data/imputation/missing_sample_data"
-# Taxas de falha que esperamos (os nomes das subpastas)
-MISSING_RATES = [0.1, 0.2, 0.3, 0.4]
 def setup_folders():
-    """Cria todas as pastas de saída necessárias"""
-    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+    """Cria todas as pastas de saída necessárias, incluindo subpastas de taxa"""
     os.makedirs(IMPUTED_DATASETS_FOLDER, exist_ok=True)
     os.makedirs(FIGURES_FOLDER, exist_ok=True)
-    print(f"Pastas de saída verificadas/criadas em: {OUTPUT_FOLDER}")
-# --- Pastas de Saída para este script ---
-OUTPUT_FOLDER = "./data/imputation"
-IMPUTED_DATASETS_FOLDER = os.path.join(OUTPUT_FOLDER, "imputed_sample_data")
-FIGURES_FOLDER = os.path.join(IMPUTED_DATASETS_FOLDER, "figures")
+    
+    # Cria as subpastas para cada taxa
+    for rate_folder in MISSING_RATES_FOLDERS:
+        os.makedirs(os.path.join(IMPUTED_DATASETS_FOLDER, rate_folder), exist_ok=True)
+        os.makedirs(os.path.join(FIGURES_FOLDER, rate_folder), exist_ok=True)
 
-SAMPLES_DIR = "./data/imputation/sample_data"
+    print(f"Subpastas de CSVs criadas em: {IMPUTED_DATASETS_FOLDER}/[taxa]")
+    print(f"Subpastas de Figuras criadas em: {FIGURES_FOLDER}/[taxa]")
+
 def process_all_datasets():
     """Processa todos os datasets com todos os métodos de imputação"""
     setup_folders()
     
-    # --- Lógica de pastas ajustada ---
-    # Converte [0.1, 0.2] para ['10', '20']
-    missing_rate_folders = [str(int(rate * 100)) for rate in MISSING_RATES]
-    
     # Define todos os métodos de imputação
     imputation_methods = {
-        'SVD_KNN': lambda df: impute_svd_knn(df, k=10, use_hankel=False),
-        'SVD_KNN_Hankel': lambda df: impute_svd_knn(df, k=10, use_hankel=True),
+        'SVD-KNN': lambda df: impute_svd_knn(df, k=10, use_hankel=False),
+        'SVD-KNN-Hankel': lambda df: impute_svd_knn(df, k=10, use_hankel=True),
         'Kalman': impute_kalman,
         'ARIMA': impute_arima,
         'HoltWinters': impute_holtwinters,
         'Linear': impute_linear,
-        'KNN_Sklearn': lambda df: impute_knn_sklearn(df, k=5),
+        'KNN-Sklearn': lambda df: impute_knn_sklearn(df, k=5),
         'Spline': impute_spline,
         'Mean': impute_mean,
-        'LOCF': impute_locf
+        'LOCF': impute_locf,
+        # 'IterativeSVD': lambda df: impute_iterativesvd(df, rank=5),
     }
     
     all_results = []
     
-    with open(REPORT_FILE, 'w', encoding='utf-8') as report:
+    with open(FINAL_REPORT_FILE, 'w', encoding='utf-8') as report:
         report.write("="*80 + "\n")
         report.write("RELATÓRIO DE AVALIAÇÃO DE IMPUTAÇÃO\n")
         report.write("="*80 + "\n\n")
         
-        # --- NOVO LOOP NESTEADO ---
-        # Itera sobre as subpastas (ex: '10', '20', ...)
-        for rate_folder in missing_rate_folders:
+        for rate_folder in MISSING_RATES_FOLDERS:
             current_rate_dir = os.path.join(MISSING_DIR, rate_folder)
             
             if not os.path.exists(current_rate_dir):
@@ -554,11 +535,7 @@ def process_all_datasets():
                 if not missing_file.endswith('.csv'):
                     continue
                 
-                # --- LÓGICA DE NOMES AJUSTADA ---
-                # Ex: missing_file = 'dados_mr10.csv'
-                # Ex: rate_folder = '10'
-                
-                base_name_with_mr, extension = os.path.splitext(missing_file) # ('dados_mr10', '.csv')
+                base_name_with_mr, extension = os.path.splitext(missing_file) 
                 
                 # Remove o sufixo _mrXX para obter o nome base
                 # 'dados_mr10' -> 'dados'
@@ -573,9 +550,7 @@ def process_all_datasets():
                 
                 # Caminho completo para o arquivo com falhas
                 missing_path = os.path.join(current_rate_dir, missing_file)
-                
-                # --- FIM DA LÓGICA DE NOMES ---
-                
+                                
                 if not os.path.exists(original_path):
                     report.write(f"AVISO: Arquivo original '{original_file}' não encontrado em {SAMPLES_DIR} para {missing_file}\n\n")
                     print(f"AVISO: Arquivo original '{original_file}' não encontrado em {SAMPLES_DIR} para {missing_file}")
@@ -590,10 +565,8 @@ def process_all_datasets():
                     df_original = pd.read_csv(original_path)
                     df_missing = pd.read_csv(missing_path)
 
-                    # Os arquivos do script anterior já usam np.nan.
-                    # A máscara correta é simplesmente .isna()
                     df_missing_processed = df_missing.copy()
-                    missing_mask = df_missing_processed[TARGET_COLUMN].isna()
+                    missing_mask = df_missing_processed[THROUGHPUT_COLUMN].isna()
                     
                     if not missing_mask.any():
                         report.write("AVISO: Nenhum dado faltante encontrado neste arquivo (mask.sum() == 0). Pulando.\n")
@@ -616,7 +589,9 @@ def process_all_datasets():
                             safe_method = method_name.replace(" ", "").replace("/", "_")
                             # Nome do arquivo (ex: 'dados_mr10_SVD_KNN_imputed.csv')
                             imputed_fname = f"{base_name}_mr{int(missing_rate*100)}_{safe_method}_imputed.csv"
-                            imputed_fpath = os.path.join(IMPUTED_DATASETS_FOLDER, imputed_fname)
+                            
+                            # Salva dentro da subpasta da taxa (ex: /imputed_sample_data/10/)
+                            imputed_fpath = os.path.join(IMPUTED_DATASETS_FOLDER, rate_folder, imputed_fname)
                             df_imputed.to_csv(imputed_fpath, index=False)
 
                             # Avalia e loga
@@ -634,22 +609,24 @@ def process_all_datasets():
                                 'imputed_csv': imputed_fpath
                             })
 
-                            # Exporta a figura
-                            fig_name = f"{base_name}_mr{int(missing_rate*100)}_{safe_method}.png"
-                            fig_path = os.path.join(FIGURES_FOLDER, fig_name)
-                            visualize_imputation(df_original, df_missing, df_imputed,
-                                                 method_name, base_name, missing_rate, fig_path)
+                            # # Exporta a figura (Comentado a pedido)
+                            # fig_name = f"{base_name}_mr{int(missing_rate*100)}_{safe_method}.png"
+                            # # Salva dentro da subpasta da taxa (ex: /figures/10/)
+                            # fig_path = os.path.join(FIGURES_FOLDER, rate_folder, fig_name)
+                            # visualize_imputation(df_original, df_missing, df_imputed,
+                            #                      method_name, base_name, missing_rate, fig_path)
 
                         except Exception as e:
-                            report.write(f"{method_name:<20} ERRO: {str(e)}\n")
+                            error_msg = f"{method_name:<20} ERRO: {str(e)}"
+                            report.write(f"{error_msg}\n")
                             print(f"Erro no método {method_name} para {missing_file}: {str(e)}")
 
                 except Exception as e:
-                    report.write(f"ERRO ao processar arquivo: {str(e)}\n\n")
-                    print(f"Erro ao processar {missing_file}: {str(e)}")
+                    error_msg = f"ERRO ao processar arquivo {missing_file}: {str(e)}"
+                    report.write(f"{error_msg}\n\n")
+                    print(error_msg)
                     continue
         
-        # --- Seção de Sumário (sem alterações, deve funcionar) ---
         results_df = pd.DataFrame(all_results)
         
         if len(results_df) > 0:
@@ -658,11 +635,11 @@ def process_all_datasets():
             report.write("="*80 + "\n\n")
             
             # Agrupa por taxa de falha
-            for missing_rate in sorted(results_df['missing_rate'].unique()):
-                report.write(f"\nTaxa de Falha: {missing_rate*100:.0f}%\n")
+            for missing_rate_val in sorted(results_df['missing_rate'].unique()):
+                report.write(f"\nTaxa de Falha: {missing_rate_val*100:.0f}%\n")
                 report.write("-" * 60 + "\n")
                 
-                rate_data = results_df[results_df['missing_rate'] == missing_rate]
+                rate_data = results_df[results_df['missing_rate'] == missing_rate_val]
                 # Agrupa por método para esta taxa
                 summary = rate_data.groupby('method').agg({
                     'rmse': ['mean', 'std'],
@@ -674,20 +651,30 @@ def process_all_datasets():
                 
                 # Encontra o melhor para esta taxa (baseado na média)
                 summary_mean = rate_data.groupby('method').agg({'rmse': 'mean', 'mae': 'mean'})
-                best_rmse_method = summary_mean['rmse'].idxmin()
-                best_mae_method = summary_mean['mae'].idxmin()
                 
-                report.write(f"Melhor Média RMSE: {best_rmse_method} ({summary_mean.loc[best_rmse_method, 'rmse']:.4f})\n")
-                report.write(f"Melhor Média MAE : {best_mae_method} ({summary_mean.loc[best_mae_method, 'mae']:.4f})\n")
+                if not summary_mean.empty:
+                    best_rmse_method = summary_mean['rmse'].idxmin()
+                    best_mae_method = summary_mean['mae'].idxmin()
+                    report.write(f"Melhor Média RMSE: {best_rmse_method} ({summary_mean.loc[best_rmse_method, 'rmse']:.4f})\n")
+                    report.write(f"Melhor Média MAE : {best_mae_method} ({summary_mean.loc[best_mae_method, 'mae']:.4f})\n")
+                else:
+                    report.write("Nenhum resultado de método bem-sucedido para esta taxa.\n")
             
-            csv_path = os.path.join(OUTPUT_FOLDER, "detailed_results.csv")
+            csv_path = os.path.join(IMPUTATION_RESULTS_DIR, "detailed_results.csv")
             results_df.to_csv(csv_path, index=False)
             report.write(f"\n\nResultados detalhados salvos em: {csv_path}\n")
+        
+        else:
+            report.write("Nenhum resultado foi gerado.\n")
     
     print(f"\nProcessamento concluído!")
-    print(f"Relatório salvo em: {REPORT_FILE}")
-    print(f"Figuras salvas em: {FIGURES_FOLDER}")
-    print(f"Resultados detalhados salvos em: {os.path.join(OUTPUT_FOLDER, 'detailed_results.csv')}")
+    print(f"Relatório salvo em: {FINAL_REPORT_FILE}")
+    print(f"Figuras (desativadas) salvas em: {FIGURES_FOLDER}")
+    
+    if len(all_results) > 0:
+        print(f"Resultados detalhados salvos em: {os.path.join(IMPUTATION_RESULTS_DIR, 'detailed_results.csv')}")
+    else:
+        print("Nenhum resultado detalhado foi salvo.")
 
 if __name__ == "__main__":
     process_all_datasets()
