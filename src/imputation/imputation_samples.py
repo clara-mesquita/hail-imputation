@@ -172,6 +172,7 @@ def svd_rank(M_filled, energy=0.9):
     # o uso de soma ao invés e soma quadrática ajuda a não evidenciar tanto os primeiros componentes
     # pode-se dizer que foi principalmente uma decisão empírica tanto porque performou melhor como foi mais consistente
     # e tb pode-se dizer que a ideia foi usar si como peso de cada padrão e não como potência
+    # não supervalorizar demais o primeiro componente e obter projeções mais estáveis
     total_energy = np.sum(s)
     # verifica se a energia é muito pequena 
     if total_energy < 1e-12:
@@ -208,6 +209,8 @@ def knn_in_latent(M, k=5, energy=0.9, allow_future=True):
     """Impute missing values using KNN in SVD latent space"""
     M_filled = _initial_fill(M)
     U, s, Vt, r = svd_rank(M_filled, energy=energy)
+    # foi feito com a matriz U porque é a que representa as linhas (o que queremos imputar)
+    # os valores singulares (s até o posto r) aqui representam "pesos"
     Z = U[:, :r] * s[:r]
     
     M_imputed = M.copy()
@@ -221,6 +224,7 @@ def knn_in_latent(M, k=5, energy=0.9, allow_future=True):
             continue
         
         # ("vetor resumo")
+        # o zi representa a estrutura global da linha i - capturando padrões sazonais, tendência e correlação entre as colunas 
         zi = Z[i]
         candidates = np.arange(T) if allow_future else np.arange(0, i)
         
@@ -513,7 +517,6 @@ def process_all_datasets():
     setup_folders()
     
     # Define todos os métodos de imputação
-    # [SEM ALTERAÇÃO] Lógica de imputação mantida exatamente como solicitado.
     imputation_methods = {
         'SVD-KNN': lambda df: impute_svd_knn(df, k=10, use_hankel=False),
         'SVD-KNN-Hankel': lambda df: impute_svd_knn(df, k=10, use_hankel=True),
