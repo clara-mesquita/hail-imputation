@@ -20,8 +20,6 @@ except NameError:
 MODEL = "gru"
 # MODEL = "sarima"
 
-# --- MODIFICAÇÃO INÍCIO ---
-# 1. Renomeie os diretórios para servirem como "BASE"
 # Diretório BASE contendo os arquivos y_pred (predições do modelo)
 BASE_PREDICTION_DIR = BASE_DIR/"data"/"prediction"/MODEL
 # Diretório BASE contendo os arquivos y_true (dados de teste reais)
@@ -29,14 +27,11 @@ BASE_TEST_DIR = BASE_DIR/"data"/"prediction"/"test"/MODEL
 # Diretório BASE onde os CSVs de métricas serão salvos
 BASE_OUTPUT_DIR = BASE_DIR/"results"/"prediction"/MODEL
 
-# 2. Defina a lista de subdiretórios para processar
+# Defina a lista de subdiretórios para processar
 # Para processar .../MODEL/10 e .../MODEL/20:
 SUB_DIRS = [""] 
 # Para processar APENAS .../MODEL/ (comportamento original), use:
 # SUB_DIRS = [""] 
-# --- MODIFICAÇÃO FIM ---
-
-
 
 
 IMPUTATION_TECHNIQUES = [
@@ -66,7 +61,10 @@ def calculate_metrics(y_true, y_pred):
     mask = ~ (np.isnan(y_true) | np.isnan(y_pred))
     y_true_clean = y_true[mask]
     y_pred_clean = y_pred[mask]
-    
+
+    y_true_gbps = y_true_clean / 1_000_000
+    y_pred_gbps = y_pred_clean / 1_000_000
+
     # Inicializa todas as métricas com NaN
     metrics = {
         "rmse": np.nan,
@@ -78,7 +76,7 @@ def calculate_metrics(y_true, y_pred):
         "fam": np.nan,
         "dtw_magnitude": np.nan, 
         "dtw_shape": np.nan,
-        "valid_pairs": len(y_true_clean)
+        "valid_pairs": len(y_true_gbps)
     }
 
     if metrics["valid_pairs"] == 0:
@@ -86,41 +84,41 @@ def calculate_metrics(y_true, y_pred):
         return metrics
 
     try:
-        metrics["rmse"] = rmse(y_true_clean, y_pred_clean)
-        metrics["mae"] = mae(y_true_clean, y_pred_clean)
-        metrics["r2"] = r2_score(y_true_clean, y_pred_clean)
+        metrics["rmse"] = rmse(y_true_gbps, y_pred_gbps)
+        metrics["mae"] = mae(y_true_gbps, y_pred_gbps)
+        metrics["r2"] = r2_score(y_true_gbps, y_pred_gbps)
     except Exception as e:
         print(f"   - Erro (RMSE/MAE/R2): {e}")
 
     try:
-        metrics["mape"] = mape(y_true_clean, y_pred_clean)
+        metrics["mape"] = mape(y_true_gbps, y_pred_gbps)
     except ZeroDivisionError:
         print(f"   - Aviso: Divisão por zero no MAPE (y_true contém zeros). Definindo como NaN.")
     except Exception as e:
         print(f"   - Erro (MAPE): {e}")
 
     try:
-        metrics["nrmse_range"] = nrmse(y_true_clean, y_pred_clean, mode="range")
+        metrics["nrmse_range"] = nrmse(y_true_gbps, y_pred_gbps, mode="range")
     except ZeroDivisionError:
         print(f"   - Aviso: Divisão por zero no NRMSE-Range (range=0). Definindo como NaN.")
     except Exception as e:
         print(f"   - Erro (NRMSE-Range): {e}")
 
     try:
-        metrics["nrmse_std"] = nrmse(y_true_clean, y_pred_clean, mode="std")
+        metrics["nrmse_std"] = nrmse(y_true_gbps, y_pred_gbps, mode="std")
     except ZeroDivisionError:
         print(f"   - Aviso: Divisão por zero no NRMSE-Std (std=0). Definindo como NaN.")
     except Exception as e:
         print(f"   - Erro (NRMSE-Std): {e}")
         
     try:
-        metrics["dtw_magnitude"] = dtw_distance(y_true_clean, y_pred_clean, normalize_for_shape=False)
-        metrics["dtw_shape"] = dtw_distance(y_true_clean, y_pred_clean, normalize_for_shape=True)
+        metrics["dtw_magnitude"] = dtw_distance(y_true_gbps, y_pred_gbps, normalize_for_shape=False)
+        metrics["dtw_shape"] = dtw_distance(y_true_gbps, y_pred_gbps, normalize_for_shape=True)
     except Exception as e:
         print(f"   - Erro (DTW): {e}")
 
     try:
-        metrics["fam"] = compute_fuzzy_accuracy(y_true_clean, y_pred_clean)
+        metrics["fam"] = compute_fuzzy_accuracy(y_true_gbps, y_pred_gbps)
     except ValueError as e:
         # Captura especificamente o erro de binning
         if "Bin labels" in str(e) or "cannot be equal" in str(e):
@@ -138,8 +136,6 @@ def main():
     # (ex: "SVD_KNN" deve ser verificado antes de "KNN")
     sorted_techniques = sorted(IMPUTATION_TECHNIQUES, key=len, reverse=True)
     
-    # --- MODIFICAÇÃO INÍCIO ---
-    # 3. Adiciona loop principal para iterar sobre os subdiretórios
     for sub_dir in SUB_DIRS:
         # Define os caminhos dinâmicos para esta iteração
         # (Se sub_dir for "", os caminhos serão os mesmos que os BASE)
@@ -160,7 +156,6 @@ def main():
         # Itera sobre os arquivos de TESTE (ground truth) no diretório ATUAL
         test_files = list(current_test_dir.glob("*_imputed_test_gru.csv"))
         # test_files = list(current_test_dir.glob("*_imputed_test.csv"))
-    # --- MODIFICAÇÃO FIM --- (O restante do código fica dentro deste novo loop)
 
         if not test_files:
             print(f"Aviso: Nenhum arquivo '*_imputed_test_gru.csv' encontrado em {current_test_dir}")
@@ -193,10 +188,7 @@ def main():
             # Monta o nome do arquivo de predição esperado
             pred_file_name = f"{original_name}_6h_{imputation_tech}_imputed_{MODEL}_prediction.csv"
             
-            # --- MODIFICAÇÃO INÍCIO ---
-            # 4. Usa o diretório de predição ATUAL
             pred_path = current_prediction_dir / pred_file_name
-            # --- MODIFICAÇÃO FIM ---
             
             if not pred_path.exists():
                 print(f"Aviso: Arquivo de predição não encontrado: {pred_file_name} em {current_prediction_dir}")
@@ -259,7 +251,7 @@ def main():
                 # Métricas de Erro (↓ Menor é melhor)
                 "rmse", "nrmse_range", "nrmse_std", "mae", "mape", 
                 # Métrica de Acurácia (↑ Maior é melhor)
-                "r2", "fam",
+                 "fam",
                 # Métricas de Forma/Estrutura (↓ Menor é melhor)
                 "dtw_magnitude", "dtw_shape",
                 # Contagem
@@ -273,10 +265,7 @@ def main():
             # Salva o CSV
             output_filename = f"{original_name}_metrics.csv"
             
-            # --- MODIFICAÇÃO INÍCIO ---
-            # 5. Salva no diretório de saída ATUAL
             output_path = current_output_dir / output_filename
-            # --- MODIFICAÇÃO FIM ---
             
             df_out.to_csv(output_path, index=False, float_format='%.6f')
             print(f"Resultados para '{original_name}' salvos em: {output_path}")

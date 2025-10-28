@@ -18,6 +18,14 @@ def dtw_distance(y_true: np.array, y_pred: np.array, normalize_for_shape: bool =
                                 antes de calcular o DTW. Isso avalia *apenas*
                                 a forma, ignorando a amplitude.
     """
+
+    try:
+        y_true_2d = y_true.reshape(-1, 1)
+        y_pred_2d = y_pred.reshape(-1, 1)
+    except AttributeError as e:
+        print(f"Erro no reshape do DTW. Input y_true: {type(y_true)}, Input y_pred: {type(y_pred)}")
+        raise e
+    
     if normalize_for_shape:
         # Usa MinMaxScaler para normalizar cada segmento individualmente
         # (reshape -1, 1) é necessário para o scaler
@@ -27,11 +35,11 @@ def dtw_distance(y_true: np.array, y_pred: np.array, normalize_for_shape: bool =
         # y_true_safe = np.nan_to_num(y_true.reshape(-1, 1))
         # y_pred_safe = np.nan_to_num(y_pred.reshape(-1, 1))
 
-        y_true_norm = scaler.fit_transform(y_true)
-        y_pred_norm = scaler.fit_transform(y_pred)
+        y_true_norm = scaler.fit_transform(y_true_2d)
+        y_pred_norm = scaler.fit_transform(y_pred_2d)
 
         return dtw(y_true_norm, y_pred_norm)
     
     else:
         # Calcula o DTW nos valores brutos (sensível à amplitude)
-        return dtw(y_true, y_pred)
+        return dtw(y_true_2d, y_pred_2d)
