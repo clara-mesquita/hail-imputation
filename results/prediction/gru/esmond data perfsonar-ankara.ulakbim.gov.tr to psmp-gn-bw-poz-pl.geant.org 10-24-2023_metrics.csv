@@ -1,0 +1,11 @@
+imputation_technique,model,rmse,nrmse_range,nrmse_std,mae,mape,r2,fuzzy_accuracy
+ARIMA,gru,,,,,,,
+HoltWinters,gru,,,,,,,
+Kalman,gru,,,,,,,
+KNN_Sklearn,gru,,,,,,,
+Linear,gru,,,,,,,
+LOCF,gru,,,,,,,
+Mean,gru,,,,,,,
+Spline,gru,,,,,,,
+SVD_KNN_Hankel,gru,,,,,,,
+SVD_KNN,gru,,,,,,,
