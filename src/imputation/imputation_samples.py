@@ -184,20 +184,25 @@ def svd_rank(M_filled, energy=0.9):
     
     return U, s, Vt, r
 
+# imputando inicialmente 
+# para poder aplicar o svd
 def _initial_fill(M):
     """Column-wise median fill for initial SVD"""
     M_filled = M.copy()
     col_medians = np.nanmedian(M_filled, axis=0)
+    # foi usado mediana porque é mais robusta para outliers
     global_median = np.nanmedian(M_filled)
     
     if np.isnan(global_median):
         global_median = 0.0
     
+    # apenas imputando na mão
     col_medians = np.where(np.isnan(col_medians), global_median, col_medians)
     nan_indices = np.where(np.isnan(M_filled))
     M_filled[nan_indices] = np.take(col_medians, nan_indices[1])
     
     return M_filled
+
 
 def knn_in_latent(M, k=5, energy=0.9, allow_future=True):
     """Impute missing values using KNN in SVD latent space"""
@@ -209,11 +214,13 @@ def knn_in_latent(M, k=5, energy=0.9, allow_future=True):
     T, P = M.shape
     observed_mask = ~np.isnan(M)
     
+    # percorre cada linha i que tenha valores faltantes
     for i in range(T):
         missing_cols = np.where(~observed_mask[i])[0]
         if len(missing_cols) == 0:
             continue
         
+        # ("vetor resumo")
         zi = Z[i]
         candidates = np.arange(T) if allow_future else np.arange(0, i)
         
