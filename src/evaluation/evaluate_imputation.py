@@ -18,11 +18,11 @@ except NameError:
     BASE_DIR = Path.cwd().parent 
 
 # Diretório BASE contendo os arquivos y_pred (predições do modelo)
-BASE_PREDICTION_DIR = BASE_DIR/"data"/"prediction"
+BASE_PREDICTION_DIR = BASE_DIR/"data"/"imputation"/"imputed_sample_data"
 # Diretório BASE contendo os arquivos y_true (dados de teste reais)
-BASE_TEST_DIR = BASE_DIR/"data"/"prediction"/"test"
+BASE_TEST_DIR = BASE_DIR/"data"/"imputation"/"sample_data"
 # Diretório BASE onde os CSVs de métricas serão salvos
-BASE_OUTPUT_DIR = BASE_DIR/"results"/"prediction"
+BASE_OUTPUT_DIR = BASE_DIR/"results"/"imputation"/"imputed_sample_data"
 
 # Defina a lista de subdiretórios para processar
 # Para processar ...
@@ -140,8 +140,12 @@ def main():
         # Define os caminhos dinâmicos para esta iteração
         # (Se sub_dir for "", os caminhos serão os mesmos que os BASE)
         current_prediction_dir = BASE_PREDICTION_DIR / sub_dir
-        current_test_dir = BASE_TEST_DIR / sub_dir
+        current_test_dir = BASE_TEST_DIR
         current_output_dir = BASE_OUTPUT_DIR / sub_dir
+
+        print(f"current_prediction_dir:{current_prediction_dir}")
+        print(f"current_test_dir:{current_test_dir}")
+        print(f"current_output_dir:{current_output_dir}")
 
         print(f"\n--- Processando Subdiretório: '{sub_dir if sub_dir else 'BASE'}' ---")
 
@@ -154,19 +158,17 @@ def main():
         print(f"Buscando arquivos de teste em: {current_test_dir}")
         
         # Itera sobre os arquivos de TESTE (ground truth) no diretório ATUAL
-        test_files = list(current_test_dir.glob("*_imputed_test_gru.csv"))
-        # test_files = list(current_test_dir.glob("*_imputed_test.csv"))
+        test_files = list(current_test_dir.glob("*_sample.csv"))
 
         if not test_files:
-            print(f"Aviso: Nenhum arquivo '*_imputed_test_gru.csv' encontrado em {current_test_dir}")
-            # print(f"Aviso: Nenhum arquivo '*_imputed_test.csv' encontrado em {current_test_dir}")
+            print(f"Aviso: Nenhum arquivo '*_sample.csv' encontrado em {current_test_dir}")
             continue # Pula para o próximo sub_dir
 
         for test_path in test_files:
             test_name = test_path.name
             
-            base_identifier = test_name.removesuffix('_imputed_test_gru.csv')
-            # base_identifier = test_name.removesuffix('_imputed_test.csv')
+            base_identifier = test_name.removesuffix('_6h_sample.csv')
+            print(base_identifier)
 
             # Encontra a qual dataset e técnica este arquivo pertence
             found_match = False
@@ -174,7 +176,8 @@ def main():
             imputation_tech = ""
             
             for tech in sorted_techniques:
-                suffix = f"_6h_{tech}"
+                suffix = f"_6h_mr{sub_dir}_{tech}_imputed.csv"
+                print(suffix)
                 if base_identifier.endswith(suffix):
                     original_name = base_identifier.removesuffix(suffix)
                     imputation_tech = tech
@@ -186,7 +189,8 @@ def main():
                 continue
 
             # Monta o nome do arquivo de predição esperado
-            pred_file_name = f"{original_name}_6h_{imputation_tech}_imputed_{MODEL}_prediction.csv"
+            pred_file_name = f"{original_name}_6h_mr{sub_dir}_{imputation_tech}_imputed.csv"
+            print(f"pred_file_name:{pred_file_name}")
             
             pred_path = current_prediction_dir / pred_file_name
             
@@ -194,7 +198,7 @@ def main():
                 print(f"Aviso: Arquivo de predição não encontrado: {pred_file_name} em {current_prediction_dir}")
                 continue
             
-            print(f"Processando: {original_name} | {imputation_tech} | {MODEL}")
+            print(f"Processando: {original_name} | {imputation_tech} | {sub_dir}")
             
             try:
                 df_test = pd.read_csv(test_path)
@@ -223,7 +227,7 @@ def main():
                 # Adiciona as chaves de identificação
                 result_row = {
                     "imputation_technique": imputation_tech,
-                    "model": MODEL,
+                    "missing_rate": sub_dir,
                     **metrics  
                 }
 
