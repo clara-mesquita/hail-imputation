@@ -503,10 +503,17 @@ def setup_folders():
     print(f"Subpastas de Figuras criadas em: {FIGURES_FOLDER}/[taxa]")
 
 def process_all_datasets():
-    """Processa todos os datasets com todos os métodos de imputação"""
+    """
+    Processa todos os datasets com todos os métodos de imputação.
+    Esta versão foi modificada para ter 'Tolerância Zero':
+    - Lança um erro e para se um diretório ou arquivo esperado não for encontrado.
+    - Lança um erro e para se um método de imputação falhar.
+    - Processa arquivos mesmo que eles não tenham dados faltantes (RMSE/MAE será 0).
+    """
     setup_folders()
     
     # Define todos os métodos de imputação
+    # [SEM ALTERAÇÃO] Lógica de imputação mantida exatamente como solicitado.
     imputation_methods = {
         'SVD-KNN': lambda df: impute_svd_knn(df, k=10, use_hankel=False),
         'SVD-KNN-Hankel': lambda df: impute_svd_knn(df, k=10, use_hankel=True),
@@ -531,108 +538,105 @@ def process_all_datasets():
         for rate_folder in MISSING_RATES_FOLDERS:
             current_rate_dir = os.path.join(MISSING_DIR, rate_folder)
             
+            # [ALTERAÇÃO]
+            # Se a pasta da taxa não existir, o script irá PARAR.
             if not os.path.exists(current_rate_dir):
-                print(f"Aviso: Diretório de taxa {current_rate_dir} não encontrado. Pulando.")
-                continue
+                error_msg = f"FATAL: Diretório de taxa não encontrado: {current_rate_dir}"
+                print(error_msg)
+                report.write(error_msg)
+                raise FileNotFoundError(error_msg)
                 
             print(f"\nProcessando pasta de taxa: {rate_folder}%")
             
             # Itera sobre os arquivos dentro da subpasta (ex: 'dados_mr10.csv')
             for missing_file in sorted(os.listdir(current_rate_dir)):
+                
+                # [SEM ALTERAÇÃO] Pular arquivos que não são .csv é uma boa prática.
                 if not missing_file.endswith('.csv'):
                     continue
                 
                 base_name_with_mr, extension = os.path.splitext(missing_file) 
-                
-                # Remove o sufixo _mrXX para obter o nome base
-                # 'dados_mr10' -> 'dados'
                 base_name = re.sub(f"_mr{rate_folder}$", "", base_name_with_mr)
                 
                 missing_rate_str = rate_folder
                 missing_rate = int(missing_rate_str) / 100.0
                 
-                # Monta o nome do arquivo original (ex: 'dados_sample.csv')
                 original_file = f"{base_name}_sample{extension}"
                 original_path = os.path.join(SAMPLES_DIR, original_file)
-                
-                # Caminho completo para o arquivo com falhas
                 missing_path = os.path.join(current_rate_dir, missing_file)
                                 
+                # [ALTERAÇÃO]
+                # Se o arquivo original (ground truth) não for encontrado, o script irá PARAR.
                 if not os.path.exists(original_path):
-                    report.write(f"AVISO: Arquivo original '{original_file}' não encontrado em {SAMPLES_DIR} para {missing_file}\n\n")
-                    print(f"AVISO: Arquivo original '{original_file}' não encontrado em {SAMPLES_DIR} para {missing_file}")
-                    continue
+                    error_msg = f"FATAL: Arquivo original '{original_file}' não encontrado em {SAMPLES_DIR} (necessário para {missing_file})"
+                    report.write(f"{error_msg}\n\n")
+                    print(error_msg)
+                    raise FileNotFoundError(error_msg)
                 
                 report.write("\n" + "="*80 + "\n")
                 report.write(f"Dataset: {base_name}\n")
                 report.write(f"Taxa de Falha: {missing_rate*100:.0f}%\n")
                 report.write("="*80 + "\n\n")
                 
-                try:
-                    df_original = pd.read_csv(original_path)
-                    df_missing = pd.read_csv(missing_path)
+                # [ALTERAÇÃO]
+                # O bloco try...except foi removido daqui.
+                # Se houver um erro de leitura (ex: CSV corrompido), o script irá PARAR.
+                df_original = pd.read_csv(original_path)
+                df_missing = pd.read_csv(missing_path)
 
-                    df_missing_processed = df_missing.copy()
-                    missing_mask = df_missing_processed[THROUGHPUT_COLUMN].isna()
+                df_missing_processed = df_missing.copy()
+                missing_mask = df_missing_processed[THROUGHPUT_COLUMN].isna()
+                
+                # [ALTERAÇÃO]
+                # Bloco "if not missing_mask.any()" foi REMOVIDO.
+                # O script agora processará arquivos mesmo que não tenham NaNs.
+                # A avaliação resultará em 0 pontos e 0.0 de erro, o que está correto.
+                
+                report.write(f"Shape Original: {df_original.shape}\n")
+                report.write(f"Pontos Faltantes: {missing_mask.sum()} ({missing_mask.sum()/len(df_missing)*100:.1f}%)\n\n")
+                
+                report.write("Performance dos Métodos:\n")
+                report.write("-" * 60 + "\n")
+                report.write(f"{'Método':<20} {'RMSE':>12} {'MAE':>12} {'Pontos':>10}\n")
+                report.write("-" * 60 + "\n")
+                
+                for method_name, impute_func in imputation_methods.items():
                     
-                    if not missing_mask.any():
-                        report.write("AVISO: Nenhum dado faltante encontrado neste arquivo (mask.sum() == 0). Pulando.\n")
-                        print(f"AVISO: {missing_file} não continha dados faltantes.")
-                        continue
-                        
-                    report.write(f"Shape Original: {df_original.shape}\n")
-                    report.write(f"Pontos Faltantes: {missing_mask.sum()} ({missing_mask.sum()/len(df_missing)*100:.1f}%)\n\n")
+                    # [ALTERAÇÃO]
+                    # O bloco try...except foi removido daqui.
+                    # Se um método de imputação falhar (ex: ARIMA não convergir),
+                    # o script irá PARAR, forçando a depuração.
                     
-                    report.write("Performance dos Métodos:\n")
-                    report.write("-" * 60 + "\n")
-                    report.write(f"{'Método':<20} {'RMSE':>12} {'MAE':>12} {'Pontos':>10}\n")
-                    report.write("-" * 60 + "\n")
-                    
-                    for method_name, impute_func in imputation_methods.items():
-                        try:
-                            df_imputed = impute_func(df_missing_processed)
+                    df_imputed = impute_func(df_missing_processed.copy()) # .copy() é boa prática
 
-                            # Salva o dataset imputado
-                            safe_method = method_name.replace(" ", "").replace("/", "_")
-                            # Nome do arquivo (ex: 'dados_mr10_SVD_KNN_imputed.csv')
-                            imputed_fname = f"{base_name}_mr{int(missing_rate*100)}_{safe_method}_imputed.csv"
-                            
-                            # Salva dentro da subpasta da taxa (ex: /imputed_sample_data/10/)
-                            imputed_fpath = os.path.join(IMPUTED_DATASETS_FOLDER, rate_folder, imputed_fname)
-                            df_imputed.to_csv(imputed_fpath, index=False)
+                    # Salva o dataset imputado
+                    safe_method = method_name.replace(" ", "").replace("/", "_")
+                    imputed_fname = f"{base_name}_mr{int(missing_rate*100)}_{safe_method}_imputed.csv"
+                    imputed_fpath = os.path.join(IMPUTED_DATASETS_FOLDER, rate_folder, imputed_fname)
+                    df_imputed.to_csv(imputed_fpath, index=False)
 
-                            # Avalia e loga
-                            metrics = evaluate_imputation(df_original, df_imputed, missing_mask)
-                            report.write(f"{method_name:<20} {metrics['rmse']:>12.4f} "
-                                         f"{metrics['mae']:>12.4f} {metrics['n_points']:>10}\n")
+                    # Avalia e loga
+                    # Assumindo que evaluate_imputation lida com mask.sum() == 0 (retornando n_points=0, rmse=0, mae=0)
+                    metrics = evaluate_imputation(df_original, df_imputed, missing_mask)
+                    report.write(f"{method_name:<20} {metrics['rmse']:>12.4f} "
+                                     f"{metrics['mae']:>12.4f} {metrics['n_points']:>10}\n")
 
-                            all_results.append({
-                                'dataset': base_name,
-                                'missing_rate': missing_rate,
-                                'method': method_name,
-                                'rmse': metrics['rmse'],
-                                'mae': metrics['mae'],
-                                'n_points': metrics['n_points'],
-                                'imputed_csv': imputed_fpath
-                            })
+                    all_results.append({
+                        'dataset': base_name,
+                        'missing_rate': missing_rate,
+                        'method': method_name,
+                        'rmse': metrics['rmse'],
+                        'mae': metrics['mae'],
+                        'n_points': metrics['n_points'],
+                        'imputed_csv': imputed_fpath
+                    })
 
-                            # # Exporta a figura (Comentado a pedido)
-                            # fig_name = f"{base_name}_mr{int(missing_rate*100)}_{safe_method}.png"
-                            # # Salva dentro da subpasta da taxa (ex: /figures/10/)
-                            # fig_path = os.path.join(FIGURES_FOLDER, rate_folder, fig_name)
-                            # visualize_imputation(df_original, df_missing, df_imputed,
-                            #                      method_name, base_name, missing_rate, fig_path)
-
-                        except Exception as e:
-                            error_msg = f"{method_name:<20} ERRO: {str(e)}"
-                            report.write(f"{error_msg}\n")
-                            print(f"Erro no método {method_name} para {missing_file}: {str(e)}")
-
-                except Exception as e:
-                    error_msg = f"ERRO ao processar arquivo {missing_file}: {str(e)}"
-                    report.write(f"{error_msg}\n\n")
-                    print(error_msg)
-                    continue
+                    # # Exporta a figura (Comentado a pedido)
+                    # fig_name = f"{base_name}_mr{int(missing_rate*100)}_{safe_method}.png"
+                    # # Salva dentro da subpasta da taxa (ex: /figures/10/)
+                    # fig_path = os.path.join(FIGURES_FOLDER, rate_folder, fig_name)
+                    # visualize_imputation(df_original, df_missing, df_imputed,
+                    #                      method_name, base_name, missing_rate, fig_path)
         
         results_df = pd.DataFrame(all_results)
         

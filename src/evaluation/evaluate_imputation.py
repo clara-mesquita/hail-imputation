@@ -50,7 +50,7 @@ IMPUTATION_TECHNIQUES = [
 ]
 
 COL_TRUE = 'Vazao'
-COL_PRED = 'prediction'
+COL_PRED = 'Vazao'
 
 
 def calculate_metrics(y_true, y_pred):
@@ -133,71 +133,70 @@ def calculate_metrics(y_true, y_pred):
 def main():
     
     # Ordena técnicas da mais longa para a mais curta para evitar correspondências parciais
-    # (ex: "SVD_KNN" deve ser verificado antes de "KNN")
     sorted_techniques = sorted(IMPUTATION_TECHNIQUES, key=len, reverse=True)
     
     for sub_dir in SUB_DIRS:
-        # Define os caminhos dinâmicos para esta iteração
-        # (Se sub_dir for "", os caminhos serão os mesmos que os BASE)
+        # Define os caminhos dinâmicos
         current_prediction_dir = BASE_PREDICTION_DIR / sub_dir
-        current_test_dir = BASE_TEST_DIR
+        current_test_dir = BASE_TEST_DIR # O diretório de teste é sempre o mesmo
         current_output_dir = BASE_OUTPUT_DIR / sub_dir
 
-        print(f"current_prediction_dir:{current_prediction_dir}")
-        print(f"current_test_dir:{current_test_dir}")
-        print(f"current_output_dir:{current_output_dir}")
+        print(f"current_prediction_dir: {current_prediction_dir}")
+        print(f"current_test_dir: {current_test_dir}")
+        print(f"current_output_dir: {current_output_dir}")
 
         print(f"\n--- Processando Subdiretório: '{sub_dir if sub_dir else 'BASE'}' ---")
 
-        # Cria o diretório de saída específico
         current_output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Dicionário para armazenar os resultados (resetado para cada sub_dir)
         all_results = defaultdict(list)
         
-        print(f"Buscando arquivos de teste em: {current_test_dir}")
+        # --- INÍCIO DA CORREÇÃO LÓGICA ---
         
-        # Itera sobre os arquivos de TESTE (ground truth) no diretório ATUAL
-        test_files = list(current_test_dir.glob("*_sample.csv"))
+        print(f"Buscando arquivos de PREDIÇÃO (imputados) em: {current_prediction_dir}")
+        
+        # 1. Itera sobre os arquivos de PREDIÇÃO (imputados), não de teste
+        # Filtra para pegar apenas os arquivos do missing rate atual
+        prediction_files = list(current_prediction_dir.glob(f"*_mr{sub_dir}_*_imputed.csv"))
 
-        if not test_files:
-            print(f"Aviso: Nenhum arquivo '*_sample.csv' encontrado em {current_test_dir}")
+        if not prediction_files:
+            print(f"Aviso: Nenhum arquivo '*_mr{sub_dir}_*_imputed.csv' encontrado em {current_prediction_dir}")
             continue # Pula para o próximo sub_dir
 
-        for test_path in test_files:
-            test_name = test_path.name
+        # Itera sobre cada arquivo de predição encontrado
+        for pred_path in prediction_files:
+            pred_name = pred_path.name
             
-            base_identifier = test_name.removesuffix('_6h_sample.csv')
-            print(base_identifier)
-
-            # Encontra a qual dataset e técnica este arquivo pertence
+            # 2. Tenta extrair a técnica e o nome original do ARQUIVO DE PREDIÇÃO
             found_match = False
             original_name = ""
             imputation_tech = ""
             
             for tech in sorted_techniques:
-                suffix = f"_6h_mr{sub_dir}_{tech}_imputed.csv"
-                print(suffix)
-                if base_identifier.endswith(suffix):
-                    original_name = base_identifier.removesuffix(suffix)
+                # Sufixo que esperamos encontrar no arquivo de predição
+                suffix_to_find = f"_6h_mr{sub_dir}_{tech}_imputed.csv"
+                
+                if pred_name.endswith(suffix_to_find):
+                    # Encontramos! Extrai o nome base
+                    original_name = pred_name.removesuffix(suffix_to_find)
                     imputation_tech = tech
                     found_match = True
-                    break
+                    break # Para o loop de técnicas
             
             if not found_match:
-                print(f"Aviso: Ignorando arquivo (não foi possível parsear técnica): {test_name}")
-                continue
+                print(f"Aviso: Ignorando arquivo (não foi possível parsear técnica): {pred_name}")
+                continue # Pula para o próximo arquivo de predição
 
-            # Monta o nome do arquivo de predição esperado
-            pred_file_name = f"{original_name}_6h_mr{sub_dir}_{imputation_tech}_imputed.csv"
-            print(f"pred_file_name:{pred_file_name}")
+            # 3. Monta o nome do arquivo de TESTE (ground truth) correspondente
+            test_file_name = f"{original_name}_6h_sample.csv"
+            test_path = current_test_dir / test_file_name
             
-            pred_path = current_prediction_dir / pred_file_name
+            # 4. Verifica se o arquivo de teste existe
+            if not test_path.exists():
+                print(f"Aviso: Arquivo de TESTE (ground truth) não encontrado: {test_file_name} em {current_test_dir}")
+                continue # Pula para o próximo arquivo de predição
             
-            if not pred_path.exists():
-                print(f"Aviso: Arquivo de predição não encontrado: {pred_file_name} em {current_prediction_dir}")
-                continue
-            
+            # Se chegamos aqui, temos os dois arquivos (pred_path e test_path)
             print(f"Processando: {original_name} | {imputation_tech} | {sub_dir}")
             
             try:
@@ -214,17 +213,14 @@ def main():
                 y_true = df_test[COL_TRUE].values
                 y_pred = df_pred[COL_PRED].values
 
-                # Garante que os vetores tenham o mesmo tamanho
                 if len(y_true) != len(y_pred):
-                    # CORRIGIDO: 'continue' em vez de 'return' para não parar o script
                     print(f"   Erro: Tamanhos diferentes em {test_path.name} ({len(y_true)}) e {pred_path.name} ({len(y_pred)}). Pulando...")
-                    # continue
-                    raise IndexError
+                    # CORRIGIDO: Usando 'continue' como seu comentário sugeria, 
+                    # em vez de 'raise IndexError' que pararia o script.
+                    continue 
                 
-                # Calcula todas as métricas
                 metrics = calculate_metrics(y_true, y_pred)
                 
-                # Adiciona as chaves de identificação
                 result_row = {
                     "imputation_technique": imputation_tech,
                     "missing_rate": sub_dir,
@@ -235,23 +231,24 @@ def main():
                 
             except Exception as e:
                 print(f"   ERRO CRÍTICO ao processar {pred_path}: {e}")
+        
+        # --- FIM DA CORREÇÃO LÓGICA ---
 
         print(f"\nProcessamento do subdiretório '{sub_dir if sub_dir else 'BASE'}' concluído. Salvando resultados...")
         
         if not all_results:
             print("Nenhum resultado foi calculado para este subdiretório.")
-            continue # Pula para o próximo sub_dir
+            continue 
 
         for original_name, results_list in all_results.items():
             if not results_list:
                 continue
                 
-            # Converte a lista de resultados deste dataset em um DataFrame
             df_out = pd.DataFrame(results_list)
             
-            # Define a ordem final das colunas (baseado nas chaves da nova função calculate_metrics)
+            # (O resto do seu script para salvar o CSV está correto)
             columns_order = [
-                "imputation_technique", "model", 
+                "imputation_technique", "missing_rate", # <-- Corrigi "model" para "missing_rate"
                 # Métricas de Erro (↓ Menor é melhor)
                 "rmse", "nrmse_range", "nrmse_std", "mae", "mape", 
                 # Métrica de Acurácia (↑ Maior é melhor)
@@ -262,17 +259,14 @@ def main():
                 "valid_pairs"
             ]
             
-            # Garante que apenas colunas existentes e na ordem correta sejam usadas
             final_cols = [col for col in columns_order if col in df_out.columns]
             df_out = df_out[final_cols]
             
-            # Salva o CSV
             output_filename = f"{original_name}_metrics.csv"
-            
             output_path = current_output_dir / output_filename
             
             df_out.to_csv(output_path, index=False, float_format='%.6f')
             print(f"Resultados para '{original_name}' salvos em: {output_path}")
-
+        
 if __name__ == "__main__":
     main()
